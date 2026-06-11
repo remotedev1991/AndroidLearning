@@ -1,102 +1,129 @@
 package com.laddu.androidlearning
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material3.BottomAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.tooling.preview.Preview
-import com.laddu.androidlearning.ui.theme.AndroidLearningTheme
-
-data class NavItem(val lable: String, val icon: ImageVector)
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.laddu.androidlearning.navigation.Screen
+import com.laddu.androidlearning.navigation.navItems
+import com.laddu.androidlearning.screens.*
+import com.laddu.androidlearning.viewmodel.SharedViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BottomNavigationExample(modifier: Modifier = Modifier) {
+fun BottomNavigationExample(sharedViewModel: SharedViewModel = viewModel()) {
+    val navController = rememberNavController()
+    
+    // 1. Snackbar state & Coroutine Scope
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    
+    // 2. Haptic Feedback (The "Pro" vibration)
+    val haptic = LocalHapticFeedback.current
 
-    val selectedIndex = remember { mutableStateOf(0) }
-
-    val navItems = listOf<NavItem>(
-        NavItem("Home", Icons.Default.Home),
-        NavItem("Search", Icons.Default.Search),
-        NavItem("Cart", Icons.Default.ShoppingCart),
-        NavItem("Profile", Icons.Default.Person),
-        NavItem("Settings", Icons.Default.Settings)
-    )
+    // 3. Observe the current backstack entry for the dynamic title
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = navBackStackEntry?.destination
+    
+    // Determine the title based on the current route
+    val currentTitle = when (currentDestination?.route) {
+        Screen.Home.route -> "Welcome Home"
+        Screen.Search.route -> "Find Products"
+        Screen.Cart.route -> "Your Shopping Cart"
+        Screen.Profile.route -> "My Account"
+        Screen.Settings.route -> "App Settings"
+        else -> "Android Learning"
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Text("Bottom Navigation Demo")
-                }, colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Blue,
-                    titleContentColor = Color.White
+                title = { Text(currentTitle) }, // Dynamic Title!
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         },
         bottomBar = {
-            BottomAppBar {
-                navItems.forEachIndexed { index, item ->
+            NavigationBar {
+                navItems.forEach { screen ->
                     NavigationBarItem(
-                        selected = selectedIndex.value == index,
-                        onClick = {
-                            selectedIndex.value = index
-                        },
-                        label = {
-                            Text(item.lable)
-                        },
                         icon = {
-                            Icon(imageVector = item.icon, contentDescription = item.lable)
+                            BadgedBox(
+                                badge = {
+                                    if ((screen is Screen.Cart) && (sharedViewModel.cartCount > 0)) {
+                                        Badge {
+                                            Text(sharedViewModel.cartCount.toString())
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(screen.icon, contentDescription = screen.label)
+                            }
+                        },
+                        label = { Text(screen.label) },
+                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                        onClick = {
+                            // Trigger haptic feedback
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            
+                            navController.navigate(screen.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
                     )
                 }
             }
         }
     ) { paddingValues ->
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            contentAlignment = Alignment.Center
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Home.route,
+            modifier = Modifier.padding(paddingValues)
         ) {
-            when(selectedIndex.value) {
-              0 -> Text("Home Screen")
-              1 -> Text("Search Screen")
-              2 -> Text("Cart Screen")
-              3 -> Text("Profile Screen")
-              4 -> Text("Settings Screen")
+            composable(Screen.Home.route) { 
+                HomeScreen(sharedViewModel) { message ->
+                    scope.launch {
+                        // Dismiss current snackbar to show the new one immediately
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        snackbarHostState.showSnackbar(
+                            message = message,
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                } 
             }
+            composable(Screen.Search.route) { SearchScreen() }
+            composable(Screen.Cart.route) { 
+                CartScreen(sharedViewModel) { message ->
+                    scope.launch {
+                        // Dismiss current snackbar to show the new one immediately
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        snackbarHostState.showSnackbar(
+                            message = message,
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                } 
+            }
+            composable(Screen.Profile.route) { ProfileScreen() }
+            composable(Screen.Settings.route) { SettingsScreen(sharedViewModel) }
         }
-    }
-}
-
-@Preview
-@Composable
-fun BottomNavigationExamplePreview() {
-    AndroidLearningTheme {
-        BottomNavigationExample()
     }
 }

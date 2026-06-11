@@ -13,13 +13,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.laddu.androidlearning.ui.theme.AndroidLearningTheme
 
+import com.laddu.androidlearning.viewmodel.SharedViewModel
+import com.laddu.androidlearning.ui.theme.AndroidLearningTheme
+import androidx.lifecycle.viewmodel.compose.viewModel
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AndroidLearningTheme {
-                BottomNavigationExample()
+            val sharedViewModel: SharedViewModel = viewModel()
+            AndroidLearningTheme(darkTheme = sharedViewModel.isDarkMode) {
+                BottomNavigationExample(sharedViewModel = sharedViewModel)
             }
         }
     }
